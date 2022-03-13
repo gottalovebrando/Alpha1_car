@@ -1,7 +1,7 @@
 #include <Arduino.h>
 
 //*******************************************for IMU******************************************************
-// most of this code comes from example sketch listed in references in setup
+// most of this IMU code comes from example sketch listed in references in setup
 #include "I2Cdev.h"
 
 #include "MPU6050_6Axis_MotionApps20.h"
@@ -57,11 +57,14 @@ void dmpDataReady()
 //*******************************************END setup IMU**************************************************
 
 //*******************************************for GPS******************************************************
-
+#include <TinyGPSPlus.h>
 //*******************************************END setup GPS**************************************************
 
 //*******************************************for SD card******************************************************
-
+#include <SPI.h>
+#include <SD.h>
+//Change this if using a different SD card reader
+const int chipSelect = 10;
 //*******************************************END setup SD card**************************************************
 
 //*******************************************for motor controller******************************************************
@@ -69,8 +72,10 @@ void dmpDataReady()
 //*******************************************END setup for motor controller**************************************************
 
 //*******************************************for misc setup******************************************************
-// keep track of LED state
+// keep track of internal LED state
 bool blinkState = false;
+//the led to light when there is an error
+const byte errorLED = 31;
 //*******************************************END misc setup**************************************************
 
 void setup()
@@ -89,14 +94,38 @@ void setup()
    * @TODO-finish reading this one (good) http://www.starlino.com/imu_guide.html
    * https://dronebotworkshop.com/mpu-6050-level/ (mainly used this one)
    * MPU6050_DMP6.ino- I2C device class (I2Cdev) demonstration Arduino sketch... by Jeff Rowberg <jeff@rowberg.net> (in electroniccats/MPU6050@^0.5.0 example folder)
-   *
+   * SD Datalooger example sketch modified 9 Apr 2012 by Tom Igoe
+   * UNIROI Infrared Remote contorl Experiment sketch (see CD that came with car)
+   * 
+   * @TODO:
+   * Put all strings in F()
+   * Figure out why program crashes after reading IMU some times
    */
 
+//*******************************************Misc setup******************************************************
   // blink at beginning
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, HIGH);
   delay(100);
   digitalWrite(LED_BUILTIN, LOW);
+
+  pinMode(errorLED, OUTPUT);
+  Serial.println(F("\n"));
+  //*******************************************end misc setup******************************************************
+
+  //*******************************************for SD card******************************************************
+  Serial.print(F("Initializing SD card..."));
+
+  // see if the card is present and can be initialized:
+  if (!SD.begin(chipSelect)) {
+    Serial.println(F("Card failed, or not present"));
+    digitalWrite(errorLED, HIGH);
+    // don't do anything more:
+    while (1);
+  }
+  Serial.println(F("card initialized."));
+  Serial.println(F("\n"));
+  //*******************************************END setup SD card**************************************************
 
   //*******************************************for IMU******************************************************
   // join I2C bus (I2Cdev library doesn't do this automatically)
@@ -108,13 +137,14 @@ void setup()
 #endif
 
   // initialize device
-  Serial.println(F("Initializing I2C devices..."));
+  Serial.println(F("Initializing IMU..."));
   mpu.initialize();
   pinMode(INTERRUPT_PIN, INPUT);
 
   // verify connection
-  Serial.println(F("Testing device connections..."));
+  Serial.println(F("Testing IMU connections..."));
   Serial.println(mpu.testConnection() ? F("MPU6050 connection successful") : F("MPU6050 connection failed"));
+//@TODO-add error notify here
 
   // wait for ready
   Serial.println(F("\nCalibration of DMP will occur in 1 second..."));
@@ -150,7 +180,7 @@ void setup()
     mpuIntStatus = mpu.getIntStatus();
 
     // set our DMP Ready flag so the main loop() function knows it's okay to use it
-    Serial.println(F("DMP ready! Waiting for first interrupt..."));
+    Serial.println(F("DMP ready! Looking for interrupts"));
     dmpReady = true;
 
     // get expected DMP packet size for later comparison
@@ -165,22 +195,30 @@ void setup()
     Serial.print(F("DMP Initialization failed (code "));
     Serial.print(devStatus);
     Serial.println(F(")"));
+    digitalWrite(errorLED, HIGH);
   }
+  Serial.println(F("\n"));
   //*******************************************END setup IMU**************************************************
 
   //*******************************************for GPS******************************************************
-
+Serial.println(F("\n"));
   //*******************************************END setup GPS**************************************************
 
-  //*******************************************for SD card******************************************************
-
-  //*******************************************END setup SD card**************************************************
-
   //*******************************************for motor controller******************************************************
-
+Serial.println(F("\n"));
   //*******************************************END setup for motor controller**************************************************
 
+//@TODO-remove this
+delay(1000);
 } // end setup()
+
+void errorNotify(String message){
+  //this does the standard error notification
+  //@TODO-implement
+  //@TODO-can you now pass strings??
+  digitalWrite(errorLED, HIGH);
+  Serial.println(message);
+}
 
 boolean getAngle()
 {
@@ -215,7 +253,24 @@ int getGPS()
 
 boolean saveToSD()
 {
+    // make a string for assembling the data to log:
+  String dataString = "";
+// open the file. note that only one file can be open at a time,
+  // so you have to close this one before opening another.
+  File dataFile = SD.open("datalog.txt", FILE_WRITE);
 
+  // if the file is available, write to it:
+  if (dataFile) {
+    dataFile.println(dataString);
+    dataFile.close();
+    // print to the serial port too:
+    Serial.println(dataString);
+  }
+  // if the file isn't open, pop up an error:
+  else {
+    Serial.println("error opening datalog.txt");
+    digitalWrite(errorLED, HIGH);
+  }
   return 1;
 }
 
@@ -229,7 +284,7 @@ void drive()
 void loop()
 {
 
-  getAngle();
+  
   getGPS();
   saveToSD();
   drive();
@@ -238,6 +293,7 @@ void loop()
   blinkState = !blinkState;
   digitalWrite(LED_BUILTIN, blinkState);
 
+if(getAngle()){
   //@TODO-remove
   Serial.print("ypr\t");
     Serial.print(ypr[0]);
@@ -245,6 +301,10 @@ void loop()
     Serial.print(ypr[1]);
     Serial.print("\t");
     Serial.println(ypr[2]);
-  delay(1000);
+  delay(500);
+}else{
+  Serial.println(F("error reading angle"));
+  digitalWrite(errorLED, HIGH);
+}
 
 } // end loop
