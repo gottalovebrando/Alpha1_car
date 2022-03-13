@@ -68,7 +68,16 @@ const int chipSelect = 10;
 //*******************************************END setup SD card**************************************************
 
 //*******************************************for motor controller******************************************************
-
+const byte Left_motor_back=9;       
+const byte Left_motor_go=8;         
+const byte Right_motor_go=6;       
+const byte Right_motor_back=7;   
+const byte Right_motor_en=5;      
+const byte Left_motor_en=10;      
+/*Set Button port*/
+const byte key=13;
+/*Set BUZZER port*/
+const byte beep=12; 
 //*******************************************END setup for motor controller**************************************************
 
 //*******************************************for misc setup******************************************************
@@ -95,11 +104,13 @@ void setup()
    * https://dronebotworkshop.com/mpu-6050-level/ (mainly used this one)
    * MPU6050_DMP6.ino- I2C device class (I2Cdev) demonstration Arduino sketch... by Jeff Rowberg <jeff@rowberg.net> (in electroniccats/MPU6050@^0.5.0 example folder)
    * SD Datalooger example sketch modified 9 Apr 2012 by Tom Igoe
-   * UNIROI Infrared Remote contorl Experiment sketch (see CD that came with car)
+   * UNIROI  (see CD that came with car)
    * 
    * @TODO:
    * Put all strings in F()
    * Figure out why program crashes after reading IMU some times
+   * remove speaker and key from SPI bus (for UNO)
+   * change function definitions from run(int time) to run(unsigned int time) and change to ms
    */
 
 //*******************************************Misc setup******************************************************
@@ -205,6 +216,16 @@ Serial.println(F("\n"));
   //*******************************************END setup GPS**************************************************
 
   //*******************************************for motor controller******************************************************
+  pinMode(Left_motor_go,OUTPUT); 
+  pinMode(Left_motor_back,OUTPUT);
+  pinMode(Right_motor_go,OUTPUT);
+  pinMode(Right_motor_back,OUTPUT);
+  pinMode(Right_motor_en,OUTPUT);
+  pinMode(Left_motor_en,OUTPUT);
+  pinMode(key,INPUT);// Set button as input
+  pinMode(beep,OUTPUT);// Set buzzer as output
+  digitalWrite(key,HIGH);//Initialize button
+  digitalWrite(beep,LOW);// set buzzer mute
 Serial.println(F("\n"));
   //*******************************************END setup for motor controller**************************************************
 
@@ -253,29 +274,76 @@ int getGPS()
 
 boolean saveToSD()
 {
+  //@TODO-handle this better (Strings can use ALOT of mem)
     // make a string for assembling the data to log:
-  String dataString = "";
-// open the file. note that only one file can be open at a time,
+    String angle = String(String(ypr[1]) + "," + String(ypr[2]));
+    String gpsData = "GPS placeholder";
+  String dataString = String(String(millis())+","+gpsData+","+angle);
+
+  //@TODO-create a unique file name?
+  //@TODO-add header
+  //static String fileName = millis();
+  static String fileName = "datalog.txt";
+  // open the file. note that only one file can be open at a time,
   // so you have to close this one before opening another.
-  File dataFile = SD.open("datalog.txt", FILE_WRITE);
+  File dataFile = SD.open(fileName, FILE_WRITE);
 
   // if the file is available, write to it:
   if (dataFile) {
+        // print to the serial port too:
+    Serial.print(F("Writing this data to SD:"));
+    Serial.println(dataString);
     dataFile.println(dataString);
     dataFile.close();
-    // print to the serial port too:
-    Serial.println(dataString);
+
   }
   // if the file isn't open, pop up an error:
   else {
     Serial.println("error opening datalog.txt");
     digitalWrite(errorLED, HIGH);
+    return 0;
   }
   return 1;
 }
 
+//@TODO-handle prototype functions for drive better
+void run(int);
+void brake(int);
 void drive()
 {
+   //back(10); //back 1s
+       //brake(5);//stop 0.5s
+       run(10);//ahead  1s
+       brake(1);//stop
+       //left(10);//turn left  1s
+       //right(10);//turn right 1s
+       //spin_right(20); //Right rotation  2s
+       //spin_left(20);//left rotation2s
+       //brake(5);//stop  0.5s 
+}
+void keysacn()
+{
+  int val;   
+  val=digitalRead(key);// Reads the button ,the level value assigns to val
+  while(digitalRead(key))// When the button is not pressed
+  {
+    val=digitalRead(key);
+  }
+  while(!digitalRead(key))// When the button is pressed
+  {
+    delay(10);	//delay 10ms
+    val=digitalRead(key);// Reads the button ,the level value assigns to val
+    if(val==LOW)  //Double check the button is pressed
+    {
+       
+      digitalWrite(beep,HIGH);//The buzzer sounds
+      delay(50);//delay 50ms
+      while(!digitalRead(key))	//Determine if the button is released or not
+        digitalWrite(beep,LOW);//mute
+    }
+    else
+      digitalWrite(beep,LOW);//mute
+  }
 }
 
 // before loop(), you either neet to put prototypes for functions called or you can just put them ahead of when they are called
@@ -283,23 +351,27 @@ void drive()
 
 void loop()
 {
-
-  
-  getGPS();
-  saveToSD();
+  Serial.println(F("Waiting for keypress..."));
+  //@TODO-figure out why this delay is needed
+  delay(10);
+  keysacn();//wait for key press
   drive();
 
-  // blink LED to indicate activity
-  blinkState = !blinkState;
-  digitalWrite(LED_BUILTIN, blinkState);
+  getGPS();
 
+//wait for car to stabilize before taking reading
+delay(500);
+//print the angle measurments out
 if(getAngle()){
   //@TODO-remove
-  Serial.print("ypr\t");
-    Serial.print(ypr[0]);
-    Serial.print("\t");
+  Serial.print("R+/L- tilt:");
+  //Serial.print("\t");
+    //Serial.print(ypr[0]);
+    //Serial.print("\t");
     Serial.print(ypr[1]);
-    Serial.print("\t");
+    Serial.print('\n');
+    Serial.print("forward+/back- tilt:");
+    //Serial.print("\t");
     Serial.println(ypr[2]);
   delay(500);
 }else{
@@ -307,4 +379,104 @@ if(getAngle()){
   digitalWrite(errorLED, HIGH);
 }
 
+//@TODO-handle SD failure
+saveToSD();
+
+// blink LED to indicate activity
+  blinkState = !blinkState;
+  digitalWrite(LED_BUILTIN, blinkState);
+
 } // end loop
+
+
+
+
+void run(int time)     // advance
+{
+ //digitalWrite(Left_motor_en,HIGH);  // Left motor enable
+  //analogWrite(Left_motor_en,157);
+  digitalWrite(Right_motor_en,HIGH);  // Right motor enable
+  digitalWrite(Right_motor_go,HIGH);  // right motor go ahead
+  digitalWrite(Right_motor_back,LOW);   
+  analogWrite(Right_motor_go,200);//PWM--Pulse Width Modulation(0~255). right motor go speed is 255.
+  analogWrite(Right_motor_back,0); 
+  digitalWrite(Left_motor_go,HIGH);  // set left motor go ahead
+  digitalWrite(Left_motor_back,LOW);
+  analogWrite(Left_motor_go,137);//PWM--Pulse Width Modulation(0~255).left motor go speed is 135.
+  analogWrite(Left_motor_back,0);
+  delay(time * 100);   //Running time can be adjusted 
+}
+
+void brake(int time)         //STOP
+{
+  digitalWrite(Right_motor_go,LOW);//Stop the right motor
+  digitalWrite(Right_motor_back,LOW);
+  digitalWrite(Left_motor_go,LOW);//Stop the left motor
+  digitalWrite(Left_motor_back,LOW);
+  delay(time * 100);  //Running time can be adjusted  
+}
+
+void left(int time)        //turn left
+{
+  digitalWrite(Right_motor_go,HIGH);	// right motor go ahead
+  digitalWrite(Right_motor_back,LOW);
+  analogWrite(Right_motor_go,190); // PWM--Pulse Width Modulation(0~255) control speed，right motor go speed is 255.
+  analogWrite(Right_motor_back,0);
+  digitalWrite(Left_motor_go,LOW);   // left motor stop
+  digitalWrite(Left_motor_back,LOW); 
+  analogWrite(Left_motor_go,0); 
+  analogWrite(Left_motor_back,0);
+  delay(time * 100);	
+}
+void spin_left(int time)   //Left rotation
+{
+  digitalWrite(Right_motor_go,HIGH);// right motor go ahead
+  digitalWrite(Right_motor_back,LOW);
+  analogWrite(Right_motor_go,200);// PWM--Pulse Width Modulation(0~255) control speed ,right motor go speed is 200.
+  analogWrite(Right_motor_back,0);
+  digitalWrite(Left_motor_go,LOW);   // left motor back off
+  digitalWrite(Left_motor_back,HIGH);
+  analogWrite(Left_motor_go,0); 
+  analogWrite(Left_motor_back,200);// PWM--Pulse Width Modulation(0~255) control speed,left motor back speed is 200.
+  delay(time * 100);
+}
+
+void right(int time)      //turn right
+{
+ digitalWrite(Right_motor_go,LOW);   // right motor stop
+  digitalWrite(Right_motor_back,LOW);
+  analogWrite(Right_motor_go,0); 
+  analogWrite(Right_motor_back,0);
+  digitalWrite(Left_motor_go,HIGH);// left motor go ahead
+  digitalWrite(Left_motor_back,LOW);
+  analogWrite(Left_motor_go,230);// PWM--Pulse Width Modulation(0~255) control speed ,left motor go speed is 255.
+  analogWrite(Left_motor_back,0);
+  delay(time * 100);
+}
+
+void spin_right(int time)   //Right rotation
+{
+  digitalWrite(Right_motor_go,LOW);  // right motor back off
+  digitalWrite(Right_motor_back,HIGH);
+  analogWrite(Right_motor_go,0); 
+  analogWrite(Right_motor_back,200);// PWM--Pulse Width Modulation(0~255) control speed
+  digitalWrite(Left_motor_go,HIGH);// left motor go ahead
+  digitalWrite(Left_motor_back,LOW);
+  analogWrite(Left_motor_go,200);// PWM--Pulse Width Modulation(0~255) control speed 
+  analogWrite(Left_motor_back,0);
+  delay(time * 100);
+}
+
+void back(int time)   //back off 
+{
+  digitalWrite(Right_motor_go,LOW); //right motor back off
+  digitalWrite(Right_motor_back,HIGH);
+  analogWrite(Right_motor_go,0);
+  analogWrite(Right_motor_back,150);// PWM--Pulse Width Modulation(0~255) control speed
+  analogWrite(Right_motor_en,165);
+  digitalWrite(Left_motor_go,LOW);  //left motor back off
+  digitalWrite(Left_motor_back,HIGH);
+  analogWrite(Left_motor_go,0);
+  analogWrite(Left_motor_back,140);// PWM--Pulse Width Modulation(0~255) control speed
+  delay(time * 100);
+}
