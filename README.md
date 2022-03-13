@@ -8,5 +8,3 @@ useful commands:
 - git config --global --list
 - git log
 - git add README.MD
-
-I'm just using this as an example for you! - Nick
