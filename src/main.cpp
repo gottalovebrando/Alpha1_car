@@ -84,9 +84,12 @@ const byte beep=12;
 // keep track of internal LED state
 bool blinkState = false;
 //the led to light when there is an error
-const byte errorLED = 31;
+const byte errorLED = 3;
+//light when saved file
+const byte sucessLED = 4;
 //*******************************************END misc setup**************************************************
-
+//@TODO-move this
+boolean saveToSD(String);
 void setup()
 {
   Serial.begin(9600);
@@ -113,16 +116,7 @@ void setup()
    * change function definitions from run(int time) to run(unsigned int time) and change to ms
    */
 
-//*******************************************Misc setup******************************************************
-  // blink at beginning
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(100);
-  digitalWrite(LED_BUILTIN, LOW);
 
-  pinMode(errorLED, OUTPUT);
-  Serial.println(F("\n"));
-  //*******************************************end misc setup******************************************************
 
   //*******************************************for SD card******************************************************
   Serial.print(F("Initializing SD card..."));
@@ -229,9 +223,24 @@ Serial.println(F("\n"));
 Serial.println(F("\n"));
   //*******************************************END setup for motor controller**************************************************
 
-//@TODO-remove this
-delay(1000);
-} // end setup()
+
+//*******************************************Misc setup******************************************************
+  // blink at beginning
+  pinMode(errorLED, OUTPUT);
+  pinMode(sucessLED, OUTPUT);
+ 
+  digitalWrite(errorLED, HIGH);
+  digitalWrite(sucessLED, HIGH);
+  delay(1000);
+  digitalWrite(errorLED, LOW);
+  digitalWrite(sucessLED, LOW);
+
+  saveToSD("***NEW DATA SESSION***");
+  saveToSD("time,gps,pitch,roll");
+  Serial.println(F("\n"));
+  //*******************************************end misc setup******************************************************
+
+} //end setup()
 
 void errorNotify(String message){
   //this does the standard error notification
@@ -272,14 +281,9 @@ int getGPS()
   return 1;
 }
 
-boolean saveToSD()
+boolean saveToSD(String dataString)
 {
-  //@TODO-handle this better (Strings can use ALOT of mem)
-    // make a string for assembling the data to log:
-    String angle = String(String(ypr[1]) + "," + String(ypr[2]));
-    String gpsData = "GPS placeholder";
-  String dataString = String(String(millis())+","+gpsData+","+angle);
-
+  
   //@TODO-create a unique file name?
   //@TODO-add header
   //static String fileName = millis();
@@ -291,10 +295,14 @@ boolean saveToSD()
   // if the file is available, write to it:
   if (dataFile) {
         // print to the serial port too:
+        digitalWrite(sucessLED, HIGH);
     Serial.print(F("Writing this data to SD:"));
     Serial.println(dataString);
     dataFile.println(dataString);
     dataFile.close();
+    //@TODO-get to move on instead of delay
+    delay(100);
+    digitalWrite(sucessLED, LOW);
 
   }
   // if the file isn't open, pop up an error:
@@ -311,6 +319,7 @@ void run(int);
 void brake(int);
 void drive()
 {
+  //A preprogrammed driving routine
    //back(10); //back 1s
        //brake(5);//stop 0.5s
        run(10);//ahead  1s
@@ -323,6 +332,7 @@ void drive()
 }
 void keysacn()
 {
+  //@TODO-fix this terribly written code!!
   int val;   
   val=digitalRead(key);// Reads the button ,the level value assigns to val
   while(digitalRead(key))// When the button is not pressed
@@ -379,15 +389,20 @@ if(getAngle()){
   digitalWrite(errorLED, HIGH);
 }
 
-//@TODO-handle SD failure
-saveToSD();
+//@TODO-handle SD failure (this returns fals when fails)
+//@TODO-handle this better (Strings can use ALOT of mem)
+    // make a string for assembling the data to log:
+    String angle = String(String(ypr[1]) + "," + String(ypr[2]));
+    String gpsData = "GPS placeholder";
+  String dataString = String(String(millis())+","+gpsData+","+angle);
+saveToSD(dataString);
 
+//@TODO-make this work with another LED maybe
 // blink LED to indicate activity
-  blinkState = !blinkState;
-  digitalWrite(LED_BUILTIN, blinkState);
+  //blinkState = !blinkState;
+  //digitalWrite(sucessLED, blinkState);
 
 } // end loop
-
 
 
 
