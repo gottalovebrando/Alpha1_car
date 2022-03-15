@@ -96,7 +96,7 @@ void setup()
   Serial.println();
   Serial.println();
   Serial.println(F("Compiled with VSCode and platformIO core 5.2.5")); //@TODO-update this whenever compiling
-  Serial.println(F("and library: electroniccats/MPU6050@^0.5.0"));
+  Serial.println(F("and librarys: electroniccats/MPU6050@^0.5.0, mikalhart/TinyGPSPlus@^1.0.3, arduino-libraries/SD@^1.2.4"));
   Serial.println(F("This is code for alpha 1 version of prototype car."));
   /*
    * Version history:
@@ -330,7 +330,7 @@ void drive()
        //spin_left(20);//left rotation2s
        //brake(5);//stop  0.5s 
 }
-void keysacn()
+void keyscan()
 {
   //@TODO-fix this terribly written code!!
   int val;   
@@ -363,13 +363,14 @@ void loop()
 {
   Serial.println(F("Waiting for keypress..."));
   //@TODO-figure out why this delay is needed
-  delay(10);
-  keysacn();//wait for key press
+  delay(1000);
+  //keyscan();//wait for key press
   drive();
 
   getGPS();
 
 //wait for car to stabilize before taking reading
+//@TODO-run experiment to determine minimum time needed to pause or implement thresholding algorithm
 delay(500);
 //print the angle measurments out
 if(getAngle()){
@@ -389,8 +390,8 @@ if(getAngle()){
   digitalWrite(errorLED, HIGH);
 }
 
-//@TODO-handle SD failure (this returns fals when fails)
-//@TODO-handle this better (Strings can use ALOT of mem)
+//@TODO-handle SD failure (this returns false when fails)
+//@TODO-handle this better (Strings can use ALOT of memory)
     // make a string for assembling the data to log:
     String angle = String(String(ypr[1]) + "," + String(ypr[2]));
     String gpsData = "GPS placeholder";
