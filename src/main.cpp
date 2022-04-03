@@ -290,6 +290,17 @@ void setup()
   Serial.println(F("\n"));
   //*******************************************END setup for motor controller**************************************************
 
+for(byte i=0; i<2;i++){
+  digitalWrite(buzzerPin, HIGH);
+  digitalWrite(errorLED, HIGH);
+  digitalWrite(sucessLED, HIGH);
+  delay(500);
+  digitalWrite(buzzerPin, LOW);
+  digitalWrite(errorLED, LOW);
+  digitalWrite(sucessLED, LOW);
+  delay(500);
+}
+
   //*******************************************for GPS******************************************************
   // Start the software serial port at the GPS's default baud, 1 start bit, 8 data bits, no parity, on stop bit
   //NOTE-increased the buffer length by changing build options in platformio.ini
@@ -305,20 +316,10 @@ void setup()
   delay(100);
   Serial.println(F("Waiting for GPS fix..."));
   waitForGPSFix();
-  Serial.print(F("We have a fix!"));
+  Serial.println(F("We have a fix!"));
 
   Serial.println(F("\n"));
   //*******************************************END setup GPS**************************************************
-
-
-Serial.println(F("DEBUG- endless loop..."));
-while(1){
-  unsigned int startT=millis();
-  Serial.println(updateGPS(),BIN);
-  Serial.print(F("ms:"));
-  Serial.println(millis()-startT);
-  delay(1000);
-}
 
   // when ready, do a lamp/buzzer test
   digitalWrite(buzzerPin, HIGH);
@@ -383,7 +384,7 @@ void errorNotify(byte errorNum, bool haltExe)
       delay(100);
       digitalWrite(errorLED, LOW);
       digitalWrite(buzzerPin, LOW);
-      delay(200);
+      delay(150);
     }
     delay(500);
     if (!haltExe)
@@ -478,7 +479,19 @@ void waitForGPSFix()
       Serial.print(F(" age of data="));
       Serial.print(gps.satellites.age());
       Serial.println(F(" ms."));
+
+      for (byte i = 0; i < gps.satellites.value(); i++)
+      {
+        digitalWrite(errorLED, HIGH);
+        digitalWrite(sucessLED, HIGH);
+        delay(300);
+        digitalWrite(errorLED, LOW);
+        digitalWrite(sucessLED, LOW);
+        delay(300);
+      }
+      delay(300);
     }
+
   } // end of waiting for GPS fix
 }
 
@@ -668,7 +681,7 @@ boolean saveToSD(String dataString)
     Serial.println(dataString);
     dataFile.println(dataString);
     if(writeHeader){
-      String header=F("ms since boot,Latitude (degrees),Longitude (degrees),GPS UTC date(DDMMYY),GPS UTC time(HHMMSSCC),Number of GPS satellites used for fix,GPS Horizontal dilution of precision,pitch (degrees),roll (degrees)");
+      String header=F("ms since boot,Latitude (degrees),Longitude (degrees),GPS UTC date(DDMMYY),GPS UTC time(HHMMSSCC),Number of GPS satellites used for fix,GPS Horizontal dilution of precision,roll (degrees) left=negative,pitch (degrees) back=negative");
       Serial.print(F("Writing this data to SD:"));
       Serial.println(header);
       dataFile.println(header);
@@ -737,14 +750,15 @@ void loop()
   keyscan();//wait for keyPin press
   drive();
 
-
   //collect data
-  if(updateGPS()){
-    //nothing needed if sucessful
-  }else{
+  bool GPSError=true;
+  while(GPSError){//loop until there is no error.
+    GPSError=updateGPS();
+  if(GPSError){
     errorNotify(2,false);
   }
 
+  }
   // wait for car to stabilize before taking reading
   //@TODO-run experiment to determine minimum time needed to pause or implement thresholding algorithm
   delay(1000);
