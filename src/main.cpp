@@ -120,20 +120,20 @@ const byte Left_motor_en = 10;
 //*******************************************for misc setup******************************************************
 // keep track of internal LED state
 bool blinkState = false; //@TODO-delete this?
-// the led to light when there is an error
+// the led to light when there is an error (URONI car- left LED D3)
 const byte errorLED = 3;
-// light when saved file
+// light when saved file (URONI car- right LED D4)
 const byte sucessLED = 4;
-// Set Button pin
+// Set Button pin (URONI car- D13)
 const byte keyPin = 13;
-// Set BUZZER pin
-const byte buzzerPin = 53; //@TODO-change back to 3
+// Set BUZZER pin (URONI car- D12)
+const byte buzzerPin = 12;
 
 // @TODO-implement this
 // Set this to false if not using the USB serial port
 // const bool serialEnabled = true;
 // set this to output extra messages to serial port, will not work if serialEnabled is false
-const bool debugEnabled = true;
+const bool debugEnabled = false;
 
 //*******************************************END misc setup**************************************************
 
@@ -203,7 +203,7 @@ void setup()
   }
   Serial.println(F("card initialized."));
   //this saves the header the first time its run after this text
-  saveToSD("***NEW DATA SESSION***,data_format_ver:1,date:March 2022");
+  saveToSD("***NEW DATA SESSION***,data_format_ver:1_(March 2022)");
   Serial.println(F("\n"));
   //*******************************************END setup SD card**************************************************
 
@@ -292,7 +292,8 @@ void setup()
 
   //*******************************************for GPS******************************************************
   // Start the software serial port at the GPS's default baud, 1 start bit, 8 data bits, no parity, on stop bit
-  //@TODO-consider increasing buffer length from 64 bytes to 82 bytes.
+  //NOTE-increased the buffer length by changing build options in platformio.ini
+  //ref- https://community.platformio.org/t/how-to-increase-the-arduino-serial-buffer-size/122/2
   //82 bytes is max NEMA sentance length (see ref, pg 13)
   //64 bytes is the default serial buffer size (https://internetofhomethings.com/homethings/?p=927)
   //NEMA specifies 10 bits per byte so, @ 9800 its 0.980 bytes/ms and @4800 its 0.480 bytes/ms
@@ -309,12 +310,14 @@ void setup()
   Serial.println(F("\n"));
   //*******************************************END setup GPS**************************************************
 
-if(debugEnabled){
+
 Serial.println(F("DEBUG- endless loop..."));
 while(1){
-  updateGPS();
-  delay(10000);
-}
+  unsigned int startT=millis();
+  Serial.println(updateGPS(),BIN);
+  Serial.print(F("ms:"));
+  Serial.println(millis()-startT);
+  delay(1000);
 }
 
   // when ready, do a lamp/buzzer test
@@ -394,17 +397,25 @@ void errorNotify(byte errorNum, bool haltExe)
 //this function reads the GPS data from the serial buffer
 void encodeGPSSerial(){
 
+      unsigned long startTwait=millis();
+      //we should wait a max of 1.5 secs for serial data
+      while (!Serial3.available() && ((millis()-startTwait)<1500)){
+        //wait for data to come in
+      }
+
       while (Serial3.available() > 0)
       {
+        //@TODO-handle when this overflows after about 70 mins!
+        unsigned long start = micros();
+        /*
         //write the raw data to the serial port
-           unsigned long start = micros();
         if(debugEnabled){
           Serial.write(Serial3.peek());
         }
-
+        */
+        
         if (saveGPSToSerial2)
           Serial2.write(Serial3.peek());
-        
 
         if (saveGPSToSD)
         {
@@ -412,13 +423,22 @@ void encodeGPSSerial(){
           // Serial3.peek()
         }
         gps.encode(Serial3.read());
-        if(debugEnabled){
 
-          Serial.print(F("Delay (microsec):"));
-          Serial.println(micros()-start);
+        /*
+        if (debugEnabled)
+        {
+          Serial.print(F("Delay:"));
+          Serial.println(micros() - start);
         }
-        delay(10); //since data could be coming in as slow as 0.48 bytes/ms, do we want to add this? could cause a buffer overflow though
-      }
+        */
+
+        //@TODO-handle this time sensitive code better. Tests with a 64 byte buffer showed that delays of ~2 ms caused read errors while delays of ~18 ms caused sucess
+        //by RS232 theory, data could be coming in as slow as 0.48 bytes/ms. but if our dealy is too high, this could cause buffer overflow.
+        while((micros()-start)<500){
+          //do nothing, just wait for more data to come in
+        }
+
+      }//end while serial available
 }
 
 //this function prints out the number of satelites found if getting updated data from GPS (not necessarily changed) since last query
@@ -430,6 +450,9 @@ void waitForGPSFix()
     if (!simulateGPS)
     {
       encodeGPSSerial();
+      if(debugEnabled){
+      Serial.println(F("encoded GPS serial"));
+    }
     }
     else
     {
@@ -459,26 +482,35 @@ void waitForGPSFix()
   } // end of waiting for GPS fix
 }
 
-//this function updates the GPS variables (latLong[2], dateTimeSats[3], hdop), returns true if sucessful, will halt program otherwise
-bool updateGPS()
+/*
+This function updates the GPS variables (latLong[2], dateTimeSats[3], hdop)
+returns 4 bit value indicating if any error. from MSB to LSB errors are: hdop, satelite number, date and time, location
+will halt program if haltExe flag set
+*/
+byte updateGPS()
 {
-
-  bool sucess = true;
+  //set to true to halt execution on error
+  bool haltExe = false;
+  byte errorVals = B00000000;
   if (debugEnabled)
   {
     Serial.println(F("Updating GPS location info..."));
   }
   if (!simulateGPS)
   {
-    for(byte j=0; j<100; j++){//just read the serial a lot of times since the buffer is technically too small
+    bool updatedData=false;
+    unsigned long startTwait=millis();
+    //iterate until have updated data or a certain time has elapsed
+    while(!updatedData && ((millis()-startTwait)<3000)){
       encodeGPSSerial();
-
-delay(100);
-
+      //variable for all data
+      updatedData = gps.location.isUpdated() && gps.time.isUpdated() && gps.date.isUpdated() && gps.satellites.isUpdated() && gps.hdop.isUpdated();
 
       //**********debug stuff*********
       if (debugEnabled)
       {
+        Serial.print(F("updatedData:"));
+        Serial.println(updatedData);
         if (GPSquality.isValid())
         {
           Serial.print(F("GPS Quality indicator:"));
@@ -487,6 +519,7 @@ delay(100);
           Serial.println(GPSquality.age());
         }
 
+         Serial.println(F("Array format:location,time,date,satelites,hdop"));
         boolean valid[5];
         valid[0] = gps.location.isValid();
         valid[1] = gps.time.isValid();
@@ -494,7 +527,7 @@ delay(100);
         valid[3] = gps.satellites.isValid();
         valid[4] = gps.hdop.isValid();
         Serial.print(F("GPS valid array:"));
-        for (byte i=0; i < (sizeof(valid)/sizeof(bool)); i++)
+        for (byte i=0; i < (sizeof(valid)/sizeof(valid[0])); i++)
         {
           Serial.print(valid[i]);
           Serial.print(',');
@@ -508,7 +541,7 @@ delay(100);
         s[3] = gps.satellites.isUpdated();
         s[4] = gps.hdop.isUpdated();
         Serial.print(F("GPS isUpdated array:"));
-        for (byte i=0; i < (sizeof(s)/sizeof(bool)); i++)
+        for (byte i=0; i < (sizeof(s)/sizeof(s[0])); i++)
         {
           Serial.print(s[i]);
           Serial.print(',');
@@ -522,7 +555,7 @@ delay(100);
         age[3] = gps.satellites.age();
         age[4] = gps.hdop.age();
         Serial.print(F("GPS age array:"));
-        for (byte i=0; i < (sizeof(age)/sizeof(uint32_t)); i++)
+        for (byte i=0; i < (sizeof(age)/sizeof(age[0])); i++)
         {
           Serial.print(age[i]);
           Serial.print(',');
@@ -542,9 +575,6 @@ delay(100);
   }
 
 
-  //variable for all data
-  boolean updatedData = gps.location.isUpdated() && gps.time.isUpdated() && gps.date.isUpdated() && gps.satellites.isUpdated() && gps.hdop.isUpdated();
-
   if (gps.location.isUpdated())
   {
     latLong[0]=gps.location.lat();// Latitude in degrees (double)
@@ -552,8 +582,8 @@ delay(100);
   }
   else
   {
-    sucess = false;
-    errorNotify(5,true);
+    errorVals = errorVals | 1 << 0;//set the 0th bit to 1
+    errorNotify(5,haltExe);
   }
 
   if (gps.time.isUpdated() && gps.date.isUpdated())
@@ -563,8 +593,8 @@ delay(100);
   }
   else
   {
-    sucess = false;
-    errorNotify(6,false);
+    errorVals = errorVals | 1 << 1;
+    errorNotify(6,haltExe);
   }
 
   if (gps.satellites.isUpdated())
@@ -573,20 +603,21 @@ delay(100);
   }
   else
   {
-    sucess = false;
-    errorNotify(7,false);
+    errorVals = errorVals | 1 << 2;
+    errorNotify(7,haltExe);
   }
+  
   if (gps.hdop.isUpdated())
   {
     hdop=gps.hdop.value(); // Horizontal Dim. of Precision (100ths-i32)
   }
   else
   {
-    sucess = false;
-    errorNotify(8,true);
+    errorVals = errorVals | 1 << 3;
+    errorNotify(8,haltExe);
   }
 
-  return sucess;
+  return errorVals;
 }
 
 boolean updateAngle()
