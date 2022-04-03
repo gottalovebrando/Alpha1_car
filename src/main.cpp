@@ -80,7 +80,7 @@ TinyGPSCustom GPSquality(gps, "GPGGA", 6);
 // save raw serial data from GPS to SD card @TODO-implement
 bool saveGPSToSD = false;
 // send raw serial data from GPS to serial port 2 on mega (9600 baud) @TODO-implement for simulated data
-bool saveGPSToSerial2 = true;
+bool saveGPSToSerial2 = false;
 //use simulated GPS data instead, for debug purposes
 bool simulateGPS = false;
 // A sample NMEA stream for simulating
@@ -127,7 +127,7 @@ const byte sucessLED = 4;
 // Set Button pin
 const byte keyPin = 13;
 // Set BUZZER pin
-const byte buzzerPin = 12;
+const byte buzzerPin = 53; //@TODO-change back to 3
 
 // @TODO-implement this
 // Set this to false if not using the USB serial port
@@ -150,7 +150,7 @@ void setup()
    * V1.0-initial
    *
    * References:
-   * @TODO-finish reading this one (good) http://www.starlino.com/imu_guide.html
+   * @TODO-finish reading this reference for IMU (good) http://www.starlino.com/imu_guide.html
    * https://dronebotworkshop.com/mpu-6050-level/ (mainly used this one)
    * MPU6050_DMP6.ino- I2C device class (I2Cdev) demonstration Arduino sketch... by Jeff Rowberg <jeff@rowberg.net> (in electroniccats/MPU6050@^0.5.0 example folder)
    * SD Datalooger example sketch modified 9 Apr 2012 by Tom Igoe
@@ -159,9 +159,11 @@ void setup()
    * @TODO-prioritized list:
    * implement error function with beeping and error numbers
    * implement settling function for angle and record max & min
-   * save raw GPS data to SD
-   * save GPS satelites used
    * implement recording of accelerometer data while driving
+   * remove parts of the program that use dynamic memory allocation
+   * save raw NEMA GPS data to SD
+   * consider saving data in GEOjson or json format for downstream processing
+   * save GPS satelites used
    * Make sure power usage is below what Mega's (1870_LD1117S50CTR) 5V regulator can handle (12W)
    * Add voltage measurment (dropout voltage for 1870_LD1117S50CTR) is 1.1@100mA, 1.2V@800mA.
    * Put all strings in F()
@@ -197,8 +199,7 @@ void setup()
     Serial.println(F("Card failed, or not present"));
     digitalWrite(errorLED, HIGH);
     // don't do anything more:
-    while (1)
-      ;
+    while (1);
   }
   Serial.println(F("card initialized."));
   //this saves the header the first time its run after this text
@@ -238,7 +239,7 @@ void setup()
   mpu.setXGyroOffset(220);
   mpu.setYGyroOffset(76);
   mpu.setZGyroOffset(-85);
-  mpu.setZAccelOffset(1788); // 1688 factory default for my test chip
+  mpu.setZAccelOffset(1788); // 1688 factory default for example test chip
 
   // make sure it worked (returns 0 if so)
   if (devStatus == 0)
@@ -308,6 +309,14 @@ void setup()
   Serial.println(F("\n"));
   //*******************************************END setup GPS**************************************************
 
+if(debugEnabled){
+Serial.println(F("DEBUG- endless loop..."));
+while(1){
+  updateGPS();
+  delay(10000);
+}
+}
+
   // when ready, do a lamp/buzzer test
   digitalWrite(buzzerPin, HIGH);
   digitalWrite(errorLED, HIGH);
@@ -335,6 +344,19 @@ void errorNotify(byte errorNum, bool haltExe)
     break;
   case 4:
     Serial.println(F("Error writing to SD card."));
+    break;
+    case 5:
+    Serial.println(F("Error-GPS location not updated."));
+    break;
+    case 6:
+    Serial.println(F("Error-GPS time/date not updated."));
+    break;
+    case 7:
+    Serial.println(F("Error-GPS number of satellites not updated."));
+    break;
+    case 8:
+    Serial.println(F("Error-GPS HDOP not updated."));
+    break;
   default:
     Serial.println(F("Error number unknown! Halting execution."));
     haltExe = true;
@@ -368,57 +390,34 @@ void errorNotify(byte errorNum, bool haltExe)
   }
 }
 
-void testGPSSim()
-{
-  //for debugging purposes, @TODO-delete
-  int i=0;
-  while (i<5)
-  {
-    i++;
-    while (*gpsStream)
-    {
-      int pos=0;
-      gps.encode(*gpsStream+pos);
-      Serial.print("gps.encode reading:");
-      Serial.println(*gpsStream+pos);
-      pos++;
-      //gps.encode(*gpsStream++);
-      //Serial.print("gps.encode reading:");
-      //Serial.println(*gpsStream);
-    }
-    delay(100);
-    
-
-    if (gps.satellites.isValid())
-    {
-      Serial.print(F("Number of satellites found="));
-      Serial.print(gps.satellites.value());
-      Serial.print(F(" data age="));
-      Serial.print(gps.satellites.age());
-      Serial.println(F(" ms."));
-    }
-    else
-    {
-      Serial.println(F("gps.satellites.isUpdated() returned false. There may be a problem..."));
-    }
-    delay(100);
-  }
-}
 
 //this function reads the GPS data from the serial buffer
 void encodeGPSSerial(){
 
       while (Serial3.available() > 0)
       {
+        //write the raw data to the serial port
+           unsigned long start = micros();
+        if(debugEnabled){
+          Serial.write(Serial3.peek());
+        }
+
         if (saveGPSToSerial2)
           Serial2.write(Serial3.peek());
+        
+
         if (saveGPSToSD)
         {
-          //@TODO-implement!
+          //@TODO-implement recording raw data to file
           // Serial3.peek()
         }
         gps.encode(Serial3.read());
-        //delay(2); //since data could be coming in as slow as 0.48 bytes/ms, do we want to add this? could cause a buffer overflow though
+        if(debugEnabled){
+
+          Serial.print(F("Delay (microsec):"));
+          Serial.println(micros()-start);
+        }
+        delay(10); //since data could be coming in as slow as 0.48 bytes/ms, do we want to add this? could cause a buffer overflow though
       }
 }
 
@@ -464,53 +463,128 @@ void waitForGPSFix()
 bool updateGPS()
 {
 
-  bool sucess = false;
+  bool sucess = true;
   if (debugEnabled)
   {
-    Serial.println(F("Updating GPS location info"));
+    Serial.println(F("Updating GPS location info..."));
   }
   if (!simulateGPS)
   {
-    encodeGPSSerial();
-    waitForGPSFix();
-  }
+    for(byte j=0; j<100; j++){//just read the serial a lot of times since the buffer is technically too small
+      encodeGPSSerial();
+
+delay(100);
+
+
+      //**********debug stuff*********
+      if (debugEnabled)
+      {
+        if (GPSquality.isValid())
+        {
+          Serial.print(F("GPS Quality indicator:"));
+          Serial.print(GPSquality.value());
+          Serial.print(F(" & Age in ms:"));
+          Serial.println(GPSquality.age());
+        }
+
+        boolean valid[5];
+        valid[0] = gps.location.isValid();
+        valid[1] = gps.time.isValid();
+        valid[2] = gps.date.isValid();
+        valid[3] = gps.satellites.isValid();
+        valid[4] = gps.hdop.isValid();
+        Serial.print(F("GPS valid array:"));
+        for (byte i=0; i < (sizeof(valid)/sizeof(bool)); i++)
+        {
+          Serial.print(valid[i]);
+          Serial.print(',');
+        }
+        Serial.println();
+
+        boolean s[5];
+        s[0] = gps.location.isUpdated();
+        s[1] = gps.time.isUpdated();
+        s[2] = gps.date.isUpdated();
+        s[3] = gps.satellites.isUpdated();
+        s[4] = gps.hdop.isUpdated();
+        Serial.print(F("GPS isUpdated array:"));
+        for (byte i=0; i < (sizeof(s)/sizeof(bool)); i++)
+        {
+          Serial.print(s[i]);
+          Serial.print(',');
+        }
+        Serial.println();
+
+        uint32_t age[5];
+        age[0] = gps.location.age();
+        age[1] = gps.time.age();
+        age[2] = gps.date.age();
+        age[3] = gps.satellites.age();
+        age[4] = gps.hdop.age();
+        Serial.print(F("GPS age array:"));
+        for (byte i=0; i < (sizeof(age)/sizeof(uint32_t)); i++)
+        {
+          Serial.print(age[i]);
+          Serial.print(',');
+        }
+        Serial.println();
+      } //**********end debug stuff*********
+
+      }//end for loop
+
+
+
+
+  }//end if(!simulateGPS)
   else
   {
     // simulated GPS data @TODO-handle this
   }
 
-  if (debugEnabled)
-  {
-    if (GPSquality.isValid()){
-      Serial.print(F("GPS Quality indicator:"));
-      Serial.println(GPSquality.value());
-    }
-  }
+
+  //variable for all data
+  boolean updatedData = gps.location.isUpdated() && gps.time.isUpdated() && gps.date.isUpdated() && gps.satellites.isUpdated() && gps.hdop.isUpdated();
 
   if (gps.location.isUpdated())
   {
     latLong[0]=gps.location.lat();// Latitude in degrees (double)
     latLong[1]=gps.location.lng();// Longitude in degrees (double)
   }
-  else { sucess = false; }
+  else
+  {
+    sucess = false;
+    errorNotify(5,true);
+  }
 
   if (gps.time.isUpdated() && gps.date.isUpdated())
   {
     dateTimeSats[0]=gps.date.value();// Raw date in DDMMYY format (u32)
     dateTimeSats[1]=gps.time.value();// Raw time in HHMMSSCC format (u32)
   }
-  else{ sucess = false; }
+  else
+  {
+    sucess = false;
+    errorNotify(6,false);
+  }
 
   if (gps.satellites.isUpdated())
   {
     dateTimeSats[2]=gps.satellites.value();// Number of satellites in use (u32)
   }
-  else{ sucess = false; }
+  else
+  {
+    sucess = false;
+    errorNotify(7,false);
+  }
   if (gps.hdop.isUpdated())
   {
     hdop=gps.hdop.value(); // Horizontal Dim. of Precision (100ths-i32)
   }
-  else{sucess = false;}
+  else
+  {
+    sucess = false;
+    errorNotify(8,true);
+  }
 
   return sucess;
 }

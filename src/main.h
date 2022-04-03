@@ -12,7 +12,7 @@ void brake(int);
 void waitForGPSFix(void);
 void encodeGPSSerial(void);
 
-void testGPSSim(void);
+bool updateGPS(void);
 
 boolean saveToSD(String);
 
